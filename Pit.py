@@ -112,8 +112,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Шагов N:"))
         self.n_input = QLineEdit("100")
         layout.addWidget(self.n_input)
-        
-        # Чекбоксы
+    
         self.cb_rk4 = QCheckBox("Метод Рунге-Кутты (RK4)")
         self.cb_rk4.setChecked(True)
         layout.addWidget(self.cb_rk4)
@@ -121,8 +120,7 @@ class MainWindow(QMainWindow):
         self.cb_trap = QCheckBox("Метод Трапеций")
         self.cb_trap.setChecked(True)
         layout.addWidget(self.cb_trap)
-        
-        # Кнопка
+      
         self.btn = QPushButton("Решить")
         self.btn.setMinimumHeight(40)
         self.btn.clicked.connect(self.on_solve)
