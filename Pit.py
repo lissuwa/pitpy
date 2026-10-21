@@ -1,196 +1,175 @@
+import sys
 import math
-import tkinter as tk
-from tkinter import messagebox, filedialog
-import matplotlib
-matplotlib.use("TkAgg")
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QMessageBox, QCheckBox
+)
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
-def make_func(s):
-    if s.strip() == "":
+def create_function(expr):
+    """Превращает строку в функцию f(t, u)"""
+    if expr.strip() == "":
         raise ValueError("Пустое выражение")
 
-    env = {}
+    math_funcs = {}
     for name in dir(math):
         if not name.startswith("_"):
-            env[name] = getattr(math, name)
+            math_funcs[name] = getattr(math, name)
 
     def f(t, u):
-        env["t"] = t
-        env["u"] = u
-        return float(eval(s, {}, env))
+        result = eval(expr, {"__builtins__": {}}, {**math_funcs, "t": t, "u": u})
+        return float(result)
 
-    f(0, 0)     
+    f(0, 0)
     return f
 
 
-def rk4(f, t, u, h):
+def rk4_step(f, t, u, h):
+    """Один шаг метода Рунге-Кутты 4-го порядка"""
     k1 = f(t, u)
     k2 = f(t + h/2, u + h*k1/2)
     k3 = f(t + h/2, u + h*k2/2)
     k4 = f(t + h, u + h*k3)
-    return u + h*(k1 + 2*k2 + 2*k3 + k4)/6
+    return u + h * (k1 + 2*k2 + 2*k3 + k4) / 6
 
 
-def trapez(f, t, u, h):
-    fu = f(t, u)
-    v = u + h * fu         
-
+def trap_step(f, t, u, h):
+    """Один шаг неявного метода Трапеций (метод Ньютона)"""
+    f_curr = f(t, u)
+    v = u + h * f_curr 
+    
     for i in range(50):
-        fv = f(t + h, v)
-        g = v - u - h*(fu + fv)/2
+        f_next = f(t + h, v)
+        g = v - u - (h/2) * (f_curr + f_next)
         if abs(g) < 1e-12:
             break
+      
         df = (f(t + h, v + 1e-7) - f(t + h, v - 1e-7)) / 2e-7
         v = v - g / (1 - h*df/2)
-
+        
     return v
 
-
-def solve(f, t0, T, u0, n, method):
+def solve_ode(f, t0, T, u0, n, method):
+    """Считает решение на всем отрезке"""
     h = (T - t0) / n
     ts = [t0]
     us = [u0]
+    
     t = t0
     u = u0
-
     for i in range(n):
         if method == "rk4":
-            u = rk4(f, t, u, h)
+            u = rk4_step(f, t, u, h)
         else:
-            u = trapez(f, t, u, h)
-        t = t + h
+            u = trap_step(f, t, u, h)
+        t += h
         ts.append(t)
         us.append(u)
-
+        
     return ts, us
 
-def on_solve():
-    try:
-        t0 = float(entry_t0.get().replace(",", "."))
-        T  = float(entry_T.get().replace(",", "."))
-        u0 = float(entry_u0.get().replace(",", "."))
-        n  = int(entry_n.get())
-    except:
-        messagebox.showerror("Ошибка", "Проверьте числа")
-        return
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Курсовая работа: Задача Коши")
+        self.resize(1050, 650)
+       
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QHBoxLayout(main_widget)
+        
+        self.figure = Figure(figsize=(6, 5))
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.ax = self.figure.add_subplot(111)
+        self.ax.grid(True, linestyle="--", alpha=0.5)
+        self.ax.set_xlabel("t")
+        self.ax.set_ylabel("u(t)")
+        main_layout.addWidget(self.canvas, stretch=2)
+        
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        main_layout.addWidget(panel, stretch=1)
+        
+        # Поля ввода
+        layout.addWidget(QLabel("Уравнение f(t, u):"))
+        self.eq_input = QLineEdit("-u") 
+        layout.addWidget(self.eq_input)
+        
+        layout.addWidget(QLabel("Начальное время t0:"))
+        self.t0_input = QLineEdit("0")
+        layout.addWidget(self.t0_input)
+        
+        layout.addWidget(QLabel("Конечное время T:"))
+        self.T_input = QLineEdit("5")
+        layout.addWidget(self.T_input)
+        
+        layout.addWidget(QLabel("Начальное значение u0:"))
+        self.u0_input = QLineEdit("1")
+        layout.addWidget(self.u0_input)
+        
+        layout.addWidget(QLabel("Шагов N:"))
+        self.n_input = QLineEdit("100")
+        layout.addWidget(self.n_input)
+        
+        # Чекбоксы
+        self.cb_rk4 = QCheckBox("Метод Рунге-Кутты (RK4)")
+        self.cb_rk4.setChecked(True)
+        layout.addWidget(self.cb_rk4)
+        
+        self.cb_trap = QCheckBox("Метод Трапеций")
+        self.cb_trap.setChecked(True)
+        layout.addWidget(self.cb_trap)
+        
+        # Кнопка
+        self.btn = QPushButton("Решить")
+        self.btn.setMinimumHeight(40)
+        self.btn.clicked.connect(self.on_solve)
+        layout.addWidget(self.btn)
+        
+        layout.addStretch() 
 
-    if T <= t0 or n <= 0:
-        messagebox.showwarning("Ошибка", "T должно быть > t0, N > 0")
-        return
-
-    try:
-        f = make_func(entry_f.get())
-    except Exception as e:
-        messagebox.showerror("Ошибка в f(t, u)", str(e))
-        return
-
-    ax.clear()
-    ax.set_xlabel("t")
-    ax.set_ylabel("u(t)")
-    ax.grid(True, linestyle="--", alpha=0.4)
-    ax.set_title("u' = " + entry_f.get() + ",  u(" + str(t0) + ") = " + str(u0))
-
-    log.delete("1.0", "end")
-
-    if var_rk4.get():
-        ts, us = solve(f, t0, T, u0, n, "rk4")
-        ax.plot(ts, us, color="blue", label="RK4")
-        log.insert("end", "RK4: u(T) = " + str(us[-1]) + "\n")
-
-    if var_trap.get():
-        ts, us = solve(f, t0, T, u0, n, "trap")
-        ax.plot(ts, us, color="red", linestyle="--", label="Трапеций")
-        log.insert("end", "Трапеций: u(T) = " + str(us[-1]) + "\n")
-
-    ax.legend()
-    canvas.draw()
-
-
-def on_reset():
-    """Кнопка "Сброс"."""
-    ax.clear()
-    ax.set_xlabel("t")
-    ax.set_ylabel("u(t)")
-    ax.set_title("Решение задачи Коши")
-    ax.grid(True, linestyle="--", alpha=0.4)
-    canvas.draw()
-    log.delete("1.0", "end")
+    def on_solve(self):
+        """Обработка нажатия кнопки 'Решить'"""
+        try:
+            t0 = float(self.t0_input.text())
+            T = float(self.T_input.text())
+            u0 = float(self.u0_input.text())
+            n = int(self.n_input.text())
+           
+            if T <= t0:
+                QMessageBox.warning(self, "Ошибка", "T должно быть больше t0")
+                return
+            if n <= 0:
+                QMessageBox.warning(self, "Ошибка", "N должно быть больше нуля")
+                return
+                
+            f = create_function(self.eq_input.text())
+            
+            self.ax.clear()
+            self.ax.grid(True, linestyle="--", alpha=0.5)
+            self.ax.set_xlabel("t")
+            self.ax.set_ylabel("u(t)")
+            self.ax.set_title(f"u' = {self.eq_input.text()}")
+            
+            if self.cb_rk4.isChecked():
+                ts_rk4, us_rk4 = solve_ode(f, t0, T, u0, n, "rk4")
+                self.ax.plot(ts_rk4, us_rk4, color="blue", label="RK4")
+                
+            if self.cb_trap.isChecked():
+                ts_trap, us_trap = solve_ode(f, t0, T, u0, n, "trap")
+                self.ax.plot(ts_trap, us_trap, color="red", linestyle="--", label="Трапеций")
+                
+            self.ax.legend()
+            self.canvas.draw() 
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Что-то пошло не так:\n{str(e)}")
 
 
-def on_save():
-    path = filedialog.asksaveasfilename(
-        defaultextension=".png",
-        filetypes=[("PNG", "*.png")])
-    if path:
-        fig.savefig(path, dpi=150)
-        log.insert("end", "Сохранено: " + path + "\n")
-
-root = tk.Tk()
-root.title("Задача Коши")
-root.geometry("1100x640")
-
-left = tk.Frame(root)
-left.pack(side="left", fill="both", expand=True)
-
-fig = plt.Figure(figsize=(7, 5))
-ax = fig.add_subplot(111)
-ax.set_xlabel("t")
-ax.set_ylabel("u(t)")
-ax.set_title("Решение задачи Коши")
-ax.grid(True, linestyle="--", alpha=0.4)
-
-canvas = FigureCanvasTkAgg(fig, master=left)
-canvas.get_tk_widget().pack(fill="both", expand=True)
-
-right = tk.Frame(root, width=320)
-right.pack(side="right", fill="y", padx=8, pady=8)
-right.pack_propagate(False)
-
-tk.Label(right, text="u'(t) = f(t, u)",
-         font=("Arial", 13, "bold")).pack(pady=5)
-
-tk.Label(right, text="f(t, u) =").pack(anchor="w")
-entry_f = tk.Entry(right)
-entry_f.insert(0, "sin(t) - u")
-entry_f.pack(fill="x", pady=2)
-
-tk.Label(right, text="t0 =").pack(anchor="w")
-entry_t0 = tk.Entry(right)
-entry_t0.insert(0, "0")
-entry_t0.pack(fill="x", pady=2)
-
-tk.Label(right, text="T =").pack(anchor="w")
-entry_T = tk.Entry(right)
-entry_T.insert(0, "8")
-entry_T.pack(fill="x", pady=2)
-
-tk.Label(right, text="u0 =").pack(anchor="w")
-entry_u0 = tk.Entry(right)
-entry_u0.insert(0, "0")
-entry_u0.pack(fill="x", pady=2)
-
-tk.Label(right, text="N шагов =").pack(anchor="w")
-entry_n = tk.Entry(right)
-entry_n.insert(0, "300")
-entry_n.pack(fill="x", pady=2)
-
-var_rk4  = tk.BooleanVar(value=True)
-var_trap = tk.BooleanVar(value=True)
-tk.Checkbutton(right, text="RK4 (синий)",
-               variable=var_rk4).pack(anchor="w")
-tk.Checkbutton(right, text="Трапеций (красный)",
-               variable=var_trap).pack(anchor="w")
-
-tk.Button(right, text="Решить", command=on_solve,
-          bg="blue", fg="white", height=2).pack(fill="x", pady=5)
-tk.Button(right, text="Сброс", command=on_reset,
-          height=2).pack(fill="x", pady=2)
-tk.Button(right, text="Сохранить график",
-          command=on_save).pack(fill="x", pady=2)
-
-tk.Label(right, text="Журнал:").pack(anchor="w", pady=(10, 0))
-log = tk.Text(right, height=8, font=("Consolas", 9))
-log.pack(fill="both")
-
-root.mainloop()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
